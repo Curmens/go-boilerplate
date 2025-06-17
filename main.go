@@ -1,11 +1,14 @@
 package main
 
 import (
-	"example.com/database"
+	"example.com/config"
 	"example.com/routes"
 )
 
 func main() {
-	database.ConnectDb()
-	routes.SetupRouter().Run()
+	//database.ConnectDb()
+
+	// load configs
+	appConfig, _ := config.Load()
+	routes.SetupRouter(appConfig.Logger)
 }
