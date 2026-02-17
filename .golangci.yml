@@ -1,0 +1,163 @@
+# GolangCI-Lint configuration
+# https://golangci-lint.run/usage/configuration/
+
+run:
+  # Timeout for analysis
+  timeout: 5m
+  
+  # Include test files
+  tests: true
+  
+  # Skip directories
+  skip-dirs:
+    - vendor
+    - testdata
+    - tmp
+
+linters:
+  enable:
+    # Default linters
+    - errcheck      # Check for unchecked errors
+    - gosimple      # Simplify code
+    - govet         # Report suspicious constructs
+    - ineffassign   # Detect ineffectual assignments
+    - staticcheck   # Static analysis
+    - unused        # Check for unused code
+    
+    # Additional linters
+    - bodyclose     # Check HTTP response body is closed
+    - dogsled       # Check for too many blank identifiers
+    - dupl          # Code duplication
+    - exportloopref # Check for pointers to loop variables
+    - gochecknoinits # No init functions
+    - goconst       # Find repeated strings
+    - gocritic      # Opinionated linter
+    - gofmt         # Check formatting
+    - goimports     # Check imports
+    - goprintffuncname # Printf-like functions naming
+    - gosec         # Security checker
+    - misspell      # Spell checker
+    - nakedret      # Naked returns in long functions
+    - noctx         # HTTP requests without context
+    - nolintlint    # Check nolint directives
+    - prealloc      # Slice preallocation
+    - revive        # Fast, extensible linter
+    - unconvert     # Unnecessary type conversions
+    - unparam       # Unused function parameters
+    - whitespace    # Whitespace issues
+
+  disable:
+    - exhaustive    # Too strict for most cases
+    - gochecknoglobals # We use globals for config
+    - lll           # Line length (handled by gofmt)
+    - wsl           # Too strict whitespace rules
+
+linters-settings:
+  errcheck:
+    # Report about not checking errors in type assertions
+    check-type-assertions: true
+    # Report about assignment of errors to blank identifier
+    check-blank: true
+
+  govet:
+    # Report about shadowed variables
+    check-shadowing: true
+
+  gofmt:
+    # Simplify code
+    simplify: true
+
+  goimports:
+    # Put local imports after 3rd-party packages
+    local-prefixes: example.com
+
+  goconst:
+    # Minimal length of string constant
+    min-len: 3
+    # Minimal occurrences count to trigger
+    min-occurrences: 3
+
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - style
+      - performance
+    disabled-checks:
+      - hugeParam  # Sometimes large params are needed
+      - rangeValCopy  # Not always an issue
+
+  gosec:
+    excludes:
+      - G104  # Audit errors not checked (we use errcheck for this)
+      - G304  # File path provided as taint input (false positives)
+
+  misspell:
+    locale: US
+
+  nakedret:
+    # Max function length for naked returns
+    max-func-lines: 30
+
+  prealloc:
+    # Report preallocation suggestions
+    simple: true
+    range-loops: true
+    for-loops: true
+
+  revive:
+    rules:
+      - name: blank-imports
+      - name: context-as-argument
+      - name: context-keys-type
+      - name: dot-imports
+      - name: error-return
+      - name: error-strings
+      - name: error-naming
+      - name: exported
+      - name: increment-decrement
+      - name: indent-error-flow
+      - name: package-comments
+      - name: range
+      - name: receiver-naming
+      - name: time-naming
+      - name: unexported-return
+      - name: var-declaration
+      - name: var-naming
+
+  unparam:
+    # Check exported functions
+    check-exported: false
+
+issues:
+  # Maximum issues count per linter
+  max-issues-per-linter: 50
+  
+  # Maximum same issues count
+  max-same-issues: 10
+  
+  # Exclude some issues
+  exclude-rules:
+    # Exclude some linters from running on tests files
+    - path: _test\.go
+      linters:
+        - dupl
+        - gosec
+        - goconst
+    
+    # Exclude known false positives
+    - path: cmd/migrate/main\.go
+      linters:
+        - gosec  # G304: File path from variable is fine here
+    
+    # Exclude main.go from some checks
+    - path: main\.go
+      linters:
+        - gochecknoinits
+
+severity:
+  # Set severity for issues
+  default-severity: warning
+  rules:
+    - linters:
+        - gosec
+      severity: error

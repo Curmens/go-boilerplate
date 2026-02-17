@@ -18,7 +18,7 @@ func main() {
 		up        = flag.Bool("up", false, "Run migrations up")
 		down      = flag.Bool("down", false, "Run migrations down")
 		seed      = flag.Bool("seed", false, "Run all seeders")
-		seedOnly  = flag.String("seed-only", "", "Run specific seeders (comma-separated): permissions,roles,users,mechanics")
+		seedOnly  = flag.String("seed-only", "", "Run specific seeders (comma-separated): permissions,roles,users")
 		listSeeds = flag.Bool("list-seeders", false, "List all available seeders")
 		resetDB   = flag.Bool("reset", false, "Reset database (DANGEROUS - drops all data)")
 		cleanupDB = flag.Bool("cleanup", false, "Cleanup test data")
@@ -28,7 +28,6 @@ func main() {
 	// Load config
 	cfg, err := config.Load()
 	if err != nil {
-		// Can't use logger yet, config failed to load
 		fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
 		os.Exit(1)
 	}
@@ -73,14 +72,14 @@ func main() {
 			"seeders": strings.Join(availableSeeders, ", "),
 			"count":   len(availableSeeders),
 		})
-		logger.Infof("\nAvailable seeders:")
+		fmt.Println("\nAvailable seeders:")
 		for _, name := range availableSeeders {
-			logger.Infof("  - %s", name)
+			fmt.Printf("  - %s\n", name)
 		}
-		logger.Infof("\nUsage examples:")
-		logger.Infof("  go run main.go -seed                    # Run all seeders")
-		logger.Infof("  go run main.go -seed-only=permissions   # Run single seeder")
-		logger.Infof("  go run main.go -seed-only=roles,users   # Run multiple seeders")
+		fmt.Println("\nUsage examples:")
+		fmt.Println("  go run cmd/migrate/main.go -seed                    # Run all seeders")
+		fmt.Println("  go run cmd/migrate/main.go -seed-only=permissions   # Run single seeder")
+		fmt.Println("  go run cmd/migrate/main.go -seed-only=roles,users   # Run multiple seeders")
 
 	case *seedOnly != "":
 		// Parse comma-separated seeder names
@@ -107,8 +106,8 @@ func main() {
 		logger.Info("All seeding completed successfully", nil)
 
 	case *resetDB:
-		logger.Warnf("\n⚠️  WARNING: This will delete ALL data in the database!")
-		logger.Infof("Press Ctrl+C to cancel or Enter to continue...")
+		fmt.Println("\n⚠️  WARNING: This will delete ALL data in the database!")
+		fmt.Print("Press Enter to continue or Ctrl+C to cancel...")
 
 		var input string
 		fmt.Scanln(&input)
@@ -128,13 +127,13 @@ func main() {
 
 	default:
 		flag.Usage()
-		logger.Infof("\nExamples:")
-		logger.Infof("  go run main.go -up                         # Run migrations")
-		logger.Infof("  go run main.go -seed                       # Run all seeders")
-		logger.Infof("  go run main.go -seed-only=mechanics        # Run only mechanics seeder")
-		logger.Infof("  go run main.go -seed-only=roles,users      # Run multiple seeders")
-		logger.Infof("  go run main.go -list-seeders               # List available seeders")
-		logger.Infof("  go run main.go -cleanup                    # Cleanup test data")
-		logger.Infof("  go run main.go -reset                      # Reset database (DANGEROUS)")
+		fmt.Println("\nExamples:")
+		fmt.Println("  go run cmd/migrate/main.go -up                         # Run migrations")
+		fmt.Println("  go run cmd/migrate/main.go -seed                       # Run all seeders")
+		fmt.Println("  go run cmd/migrate/main.go -seed-only=roles            # Run only roles seeder")
+		fmt.Println("  go run cmd/migrate/main.go -seed-only=roles,users      # Run multiple seeders")
+		fmt.Println("  go run cmd/migrate/main.go -list-seeders               # List available seeders")
+		fmt.Println("  go run cmd/migrate/main.go -cleanup                    # Cleanup test data")
+		fmt.Println("  go run cmd/migrate/main.go -reset                      # Reset database (DANGEROUS)")
 	}
 }

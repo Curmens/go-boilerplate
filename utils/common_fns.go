@@ -1,27 +1,48 @@
 package utils
 
 import (
-	"github.com/gin-gonic/gin"
-	"math/rand"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
-// GenerateRandomString generates a random string of the specified length.
+// GenerateRandomString generates a cryptographically secure random string of the specified length.
 func GenerateRandomString(length int) string {
-	rand.Seed(time.Now().UnixNano())
-	result := make([]byte, length)
-	for i := range result {
-		result[i] = charset[rand.Intn(len(charset))]
+	bytes := make([]byte, length)
+	if _, err := rand.Read(bytes); err != nil {
+		// Fallback to timestamp-based if crypto/rand fails (very unlikely)
+		return fmt.Sprintf("%d", time.Now().UnixNano())[:length]
 	}
-	return string(result)
+
+	for i := range bytes {
+		bytes[i] = charset[bytes[i]%byte(len(charset))]
+	}
+	return string(bytes)
 }
 
+// GenerateRandomHex generates a random hex string of the specified byte length
+func GenerateRandomHex(byteLength int) string {
+	bytes := make([]byte, byteLength)
+	if _, err := rand.Read(bytes); err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(bytes)
+}
+
+// GenerateSecureToken generates a secure token for things like password reset
+func GenerateSecureToken() string {
+	return GenerateRandomHex(32) // 64 character hex string
+}
+
+// SetOAuthCookie sets a secure OAuth cookie
 func SetOAuthCookie(c *gin.Context, name, value string, maxAge int) {
-	// devtunnels is HTTPS -> must use Secure + SameSite=None for cross-site redirect
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     name,
 		Value:    value,
@@ -30,10 +51,28 @@ func SetOAuthCookie(c *gin.Context, name, value string, maxAge int) {
 		HttpOnly: true,
 		Secure:   true,                  // MUST be true on HTTPS
 		SameSite: http.SameSiteNoneMode, // MUST be None for cross-site
-		// Domain: optional. Usually omit to default to current host.
 	})
 }
 
+// SetCookie sets a standard secure cookie
+func SetCookie(c *gin.Context, name, value string, maxAge int, secure bool) {
+	sameSite := http.SameSiteLaxMode
+	if secure {
+		sameSite = http.SameSiteStrictMode
+	}
+
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     name,
+		Value:    value,
+		Path:     "/",
+		MaxAge:   maxAge,
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: sameSite,
+	})
+}
+
+// ClearOAuthCookie clears an OAuth cookie
 func ClearOAuthCookie(c *gin.Context, name string) {
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     name,
@@ -44,6 +83,18 @@ func ClearOAuthCookie(c *gin.Context, name string) {
 		HttpOnly: true,
 		Secure:   true,
 		SameSite: http.SameSiteNoneMode,
+	})
+}
+
+// ClearCookie clears a cookie
+func ClearCookie(c *gin.Context, name string) {
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     name,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
+		HttpOnly: true,
 	})
 }
 
@@ -63,18 +114,17 @@ type OAuthStateStore struct {
 }
 
 var globalStateStore *OAuthStateStore
+var stateStoreOnce sync.Once
 
-func init() {
-	globalStateStore = &OAuthStateStore{
-		states: make(map[string]*OAuthState),
-	}
-
-	// Start cleanup goroutine
-	go globalStateStore.cleanupExpired()
-}
-
-// GetOAuthStateStore returns the global state store
+// GetOAuthStateStore returns the global state store (singleton)
 func GetOAuthStateStore() *OAuthStateStore {
+	stateStoreOnce.Do(func() {
+		globalStateStore = &OAuthStateStore{
+			states: make(map[string]*OAuthState),
+		}
+		// Start cleanup goroutine
+		go globalStateStore.cleanupExpired()
+	})
 	return globalStateStore
 }
 
@@ -115,6 +165,31 @@ func (s *OAuthStateStore) Get(state string) (*OAuthState, bool) {
 	return oauthState, true
 }
 
+// Peek retrieves an OAuth state without removing it
+func (s *OAuthStateStore) Peek(state string) (*OAuthState, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	oauthState, exists := s.states[state]
+	if !exists {
+		return nil, false
+	}
+
+	// Check expiration
+	if time.Now().After(oauthState.ExpiresAt) {
+		return nil, false
+	}
+
+	return oauthState, true
+}
+
+// Delete removes an OAuth state
+func (s *OAuthStateStore) Delete(state string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.states, state)
+}
+
 // cleanupExpired removes expired states every minute
 func (s *OAuthStateStore) cleanupExpired() {
 	ticker := time.NewTicker(1 * time.Minute)
@@ -137,4 +212,57 @@ func (s *OAuthStateStore) Count() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return len(s.states)
+}
+
+// StringPtr returns a pointer to a string
+func StringPtr(s string) *string {
+	return &s
+}
+
+// IntPtr returns a pointer to an int
+func IntPtr(i int) *int {
+	return &i
+}
+
+// BoolPtr returns a pointer to a bool
+func BoolPtr(b bool) *bool {
+	return &b
+}
+
+// TimePtr returns a pointer to a time.Time
+func TimePtr(t time.Time) *time.Time {
+	return &t
+}
+
+// Coalesce returns the first non-empty string
+func Coalesce(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// Contains checks if a slice contains a value
+func Contains[T comparable](slice []T, value T) bool {
+	for _, v := range slice {
+		if v == value {
+			return true
+		}
+	}
+	return false
+}
+
+// Unique returns a slice with unique values
+func Unique[T comparable](slice []T) []T {
+	seen := make(map[T]bool)
+	result := make([]T, 0, len(slice))
+	for _, v := range slice {
+		if !seen[v] {
+			seen[v] = true
+			result = append(result, v)
+		}
+	}
+	return result
 }

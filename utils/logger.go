@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-
 	"time"
 )
 
@@ -46,8 +45,8 @@ type Logger struct {
 func NewLogger(loggerConf config.LoggerConfig) (*Logger, error) {
 	loggerConfig := LoggerConfig{
 		LogDir:        loggerConf.FilePath,
-		MaxFileSize:   int64(loggerConf.MaxSize), // 100MB default
-		MaxFiles:      loggerConf.MaxFiles,       // Keep 7 days of logs
+		MaxFileSize:   int64(loggerConf.MaxSize) * 1024 * 1024, // Convert MB to bytes
+		MaxFiles:      loggerConf.MaxFiles,
 		EnableConsole: loggerConf.EnableConsole,
 		JSONFormat:    loggerConf.Format == "json",
 		Level:         LogLevel(loggerConf.Level),
@@ -73,7 +72,6 @@ func NewLoggerWithConfig(config LoggerConfig) (*Logger, error) {
 
 	// Clean up old log files
 	if err := l.cleanupOldLogs(); err != nil {
-		// Log error using the logger itself (after initialization)
 		l.Warnf("failed to cleanup old logs: %v", err)
 	}
 
@@ -203,7 +201,6 @@ func (l *Logger) cleanupOldLogs() error {
 		for i := 0; i < len(logFiles)-l.config.MaxFiles; i++ {
 			filePath := filepath.Join(l.config.LogDir, logFiles[i].Name())
 			if err := os.Remove(filePath); err != nil {
-				// Use logger to report error if available
 				if l.logger != nil {
 					l.Warnf("failed to remove old log file %s: %v", filePath, err)
 				}

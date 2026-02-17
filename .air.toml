@@ -1,0 +1,84 @@
+# Air configuration for hot reload
+# https://github.com/cosmtrek/air
+
+root = "."
+testdata_dir = "testdata"
+tmp_dir = "tmp"
+
+[build]
+  # Binary name
+  bin = "./tmp/main"
+  
+  # Build command
+  cmd = "go build -o ./tmp/main ."
+  
+  # Watch these file extensions
+  include_ext = ["go", "tpl", "tmpl", "html"]
+  
+  # Exclude directories
+  exclude_dir = ["assets", "tmp", "vendor", "testdata", "node_modules", "logs", "uploads"]
+  
+  # Exclude files
+  exclude_file = []
+  
+  # Exclude regex patterns
+  exclude_regex = ["_test.go"]
+  
+  # Exclude unchanged files
+  exclude_unchanged = false
+  
+  # Follow symlinks
+  follow_symlink = false
+  
+  # Kill existing process before starting new one
+  kill_delay = "0s"
+  
+  # Log file location
+  log = "build-errors.log"
+  
+  # Send interrupt signal before kill
+  send_interrupt = false
+  
+  # Delay after file change
+  delay = 1000 # ms
+  
+  # Stop on error
+  stop_on_error = false
+  
+  # Arguments to pass to the binary
+  args_bin = []
+  
+  # Full binary path
+  full_bin = ""
+  
+  # Rerun the binary with the same args on rebuild
+  rerun = false
+  
+  # Delay before rerun
+  rerun_delay = 500
+
+[color]
+  # Customize log colors
+  app = ""
+  build = "yellow"
+  main = "magenta"
+  runner = "green"
+  watcher = "cyan"
+
+[log]
+  # Show log time
+  time = false
+  
+  # Only show main logs
+  main_only = false
+
+[misc]
+  # Delete tmp dir on exit
+  clean_on_exit = true
+
+[screen]
+  # Clear screen on rebuild
+  clear_on_rebuild = true
+  
+  # Keep scroll position
+  keep_scroll = true
