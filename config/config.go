@@ -116,12 +116,13 @@ type RateConfig struct {
 }
 
 type CorsConfig struct {
-	AllowedOrigins   []string `json:"allowed_origins"`
-	AllowedMethods   []string `json:"allowed_methods"`
-	AllowedHeaders   []string `json:"allowed_headers"`
-	ExposedHeaders   []string `json:"exposed_headers"`
-	AllowCredentials bool     `json:"allow_credentials"`
-	MaxAge           int      `json:"max_age"`
+	AllowedOrigins           []string `json:"allowed_origins"`
+	AllowedMethods           []string `json:"allowed_methods"`
+	AllowedHeaders           []string `json:"allowed_headers"`
+	ExposedHeaders           []string `json:"exposed_headers"`
+	AllowCredentials         bool     `json:"allow_credentials"`
+	AccessControlAllowOrigin []string `json:"access-control-allow-origin"`
+	MaxAge                   int      `json:"max_age"`
 }
 
 // Load loads configuration from environment variables and .env file
@@ -212,12 +213,13 @@ func Load() (*Config, error) {
 			TTL:     getDurationEnv("RATE_LIMIT_TTL", 1*time.Hour),
 		},
 		Cors: CorsConfig{
-			AllowedOrigins:   getSliceEnv("CORS_ALLOWED_ORIGINS", []string{"*"}),
-			AllowedMethods:   getSliceEnv("CORS_ALLOWED_METHODS", []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}),
-			AllowedHeaders:   getSliceEnv("CORS_ALLOWED_HEADERS", []string{"Origin", "Content-Type", "Authorization", "X-Request-ID"}),
-			ExposedHeaders:   getSliceEnv("CORS_EXPOSED_HEADERS", []string{"X-Request-ID"}),
-			AllowCredentials: getBoolEnv("CORS_ALLOW_CREDENTIALS", true),
-			MaxAge:           getIntEnv("CORS_MAX_AGE", 86400),
+			AllowedOrigins:           getSliceEnv("CORS_ALLOWED_ORIGINS", []string{"*", "localhost:3000", "http://localhost:3000", "http://127.0.0.1:3000"}),
+			AccessControlAllowOrigin: getSliceEnv("ACCESS_CONTROL_ALLOW_ORIGIN", []string{"*", "http://localhost:3000"}),
+			AllowedMethods:           getSliceEnv("CORS_ALLOWED_METHODS", []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}),
+			AllowedHeaders:           getSliceEnv("CORS_ALLOWED_HEADERS", []string{"Origin", "Content-Type", "Authorization", "X-Request-ID"}),
+			ExposedHeaders:           getSliceEnv("CORS_EXPOSED_HEADERS", []string{"X-Request-ID"}),
+			AllowCredentials:         getBoolEnv("CORS_ALLOW_CREDENTIALS", true),
+			MaxAge:                   getIntEnv("CORS_MAX_AGE", 86400),
 		},
 	}
 

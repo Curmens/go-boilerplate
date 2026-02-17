@@ -44,7 +44,7 @@ type Logger struct {
 
 // NewLogger creates a new instance of Logger with default configuration
 func NewLogger(loggerConf config.LoggerConfig) (*Logger, error) {
-	config := LoggerConfig{
+	loggerConfig := LoggerConfig{
 		LogDir:        loggerConf.FilePath,
 		MaxFileSize:   int64(loggerConf.MaxSize), // 100MB default
 		MaxFiles:      loggerConf.MaxFiles,       // Keep 7 days of logs
@@ -52,7 +52,7 @@ func NewLogger(loggerConf config.LoggerConfig) (*Logger, error) {
 		JSONFormat:    loggerConf.Format == "json",
 		Level:         LogLevel(loggerConf.Level),
 	}
-	return NewLoggerWithConfig(config)
+	return NewLoggerWithConfig(loggerConfig)
 }
 
 // NewLoggerWithConfig creates a new instance of Logger with custom configuration
@@ -73,8 +73,8 @@ func NewLoggerWithConfig(config LoggerConfig) (*Logger, error) {
 
 	// Clean up old log files
 	if err := l.cleanupOldLogs(); err != nil {
-		// Log error but don't fail initialization
-		fmt.Fprintf(os.Stderr, "Warning: failed to cleanup old logs: %v\n", err)
+		// Log error using the logger itself (after initialization)
+		l.Warnf("failed to cleanup old logs: %v", err)
 	}
 
 	return l, nil
@@ -203,7 +203,10 @@ func (l *Logger) cleanupOldLogs() error {
 		for i := 0; i < len(logFiles)-l.config.MaxFiles; i++ {
 			filePath := filepath.Join(l.config.LogDir, logFiles[i].Name())
 			if err := os.Remove(filePath); err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to remove old log file %s: %v\n", filePath, err)
+				// Use logger to report error if available
+				if l.logger != nil {
+					l.Warnf("failed to remove old log file %s: %v", filePath, err)
+				}
 			}
 		}
 	}
@@ -286,9 +289,19 @@ func (l *Logger) Info(message string, fields map[string]interface{}) error {
 	return l.Log(InfoLevel, message, fields)
 }
 
+// Infof logs an info level message with formatting
+func (l *Logger) Infof(format string, args ...interface{}) error {
+	return l.Log(InfoLevel, fmt.Sprintf(format, args...), nil)
+}
+
 // Warn logs a warning level message
 func (l *Logger) Warn(message string, fields map[string]interface{}) error {
 	return l.Log(WarnLevel, message, fields)
+}
+
+// Warnf logs a warning level message with formatting
+func (l *Logger) Warnf(format string, args ...interface{}) error {
+	return l.Log(WarnLevel, fmt.Sprintf(format, args...), nil)
 }
 
 // Error logs an error level message
@@ -296,9 +309,19 @@ func (l *Logger) Error(message string, fields map[string]interface{}) error {
 	return l.Log(ErrorLevel, message, fields)
 }
 
+// Errorf logs an error level message with formatting
+func (l *Logger) Errorf(format string, args ...interface{}) error {
+	return l.Log(ErrorLevel, fmt.Sprintf(format, args...), nil)
+}
+
 // Debug logs a debug level message
 func (l *Logger) Debug(message string, fields map[string]interface{}) error {
 	return l.Log(DebugLevel, message, fields)
+}
+
+// Debugf logs a debug level message with formatting
+func (l *Logger) Debugf(format string, args ...interface{}) error {
+	return l.Log(DebugLevel, fmt.Sprintf(format, args...), nil)
 }
 
 // With creates a new logger with predefined fields
@@ -348,9 +371,19 @@ func (cl *ContextLogger) Info(message string, fields map[string]interface{}) err
 	return cl.logger.Info(message, cl.mergeFields(fields))
 }
 
+// Infof logs an info level message with formatting and context fields
+func (cl *ContextLogger) Infof(format string, args ...interface{}) error {
+	return cl.logger.Info(fmt.Sprintf(format, args...), cl.fields)
+}
+
 // Warn logs a warning level message with context fields
 func (cl *ContextLogger) Warn(message string, fields map[string]interface{}) error {
 	return cl.logger.Warn(message, cl.mergeFields(fields))
+}
+
+// Warnf logs a warning level message with formatting and context fields
+func (cl *ContextLogger) Warnf(format string, args ...interface{}) error {
+	return cl.logger.Warn(fmt.Sprintf(format, args...), cl.fields)
 }
 
 // Error logs an error level message with context fields
@@ -358,7 +391,17 @@ func (cl *ContextLogger) Error(message string, fields map[string]interface{}) er
 	return cl.logger.Error(message, cl.mergeFields(fields))
 }
 
+// Errorf logs an error level message with formatting and context fields
+func (cl *ContextLogger) Errorf(format string, args ...interface{}) error {
+	return cl.logger.Error(fmt.Sprintf(format, args...), cl.fields)
+}
+
 // Debug logs a debug level message with context fields
 func (cl *ContextLogger) Debug(message string, fields map[string]interface{}) error {
 	return cl.logger.Debug(message, cl.mergeFields(fields))
+}
+
+// Debugf logs a debug level message with formatting and context fields
+func (cl *ContextLogger) Debugf(format string, args ...interface{}) error {
+	return cl.logger.Debug(fmt.Sprintf(format, args...), cl.fields)
 }
