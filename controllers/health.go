@@ -30,14 +30,6 @@ type HealthResponse struct {
 	Error     string    `json:"error,omitempty"`
 }
 
-// Ping handles ping requests for a basic reachability check
-func Ping(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"message":   "pong",
-		"timestamp": time.Now().UTC(),
-	})
-}
-
 // Health reports overall status including database connectivity
 func (h *HealthController) Health(c *gin.Context) {
 	health := HealthResponse{
