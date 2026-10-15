@@ -1,0 +1,59 @@
+# golangci-lint v2 configuration
+# https://golangci-lint.run/usage/configuration/
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  # "standard" = errcheck, govet, ineffassign, staticcheck, unused
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - gocritic
+    - gosec
+    - misspell
+    - noctx
+    - prealloc
+    - revive
+    - unconvert
+    - unparam
+  settings:
+    errcheck:
+      exclude-functions:
+        # Log write failures are reported to stderr by the logger itself.
+        - (*example.com/utils.Logger).Info
+        - (*example.com/utils.Logger).Warn
+        - (*example.com/utils.Logger).Error
+        - (*example.com/utils.Logger).Debug
+        - (*example.com/utils.Logger).Log
+        - (*example.com/utils.Logger).Infof
+        - (*example.com/utils.Logger).Warnf
+        - (*example.com/utils.Logger).Debugf
+        - (*example.com/utils.Logger).Close
+    gocritic:
+      enabled-tags: [diagnostic, performance]
+    gosec:
+      excludes:
+        - G104 # unhandled errors — covered by errcheck
+    misspell:
+      locale: US
+  exclusions:
+    presets:
+      - comments
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters: [gosec, unparam]
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    gofmt:
+      simplify: true
+    goimports:
+      local-prefixes:
+        - example.com

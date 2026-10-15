@@ -135,3 +135,13 @@ $RECYCLE.BIN/
 *.lnk
 
 # End of https://www.toptal.com/developers/gitignore/api/go,linux,macos,windows,visualstudiocode,git
+### Project ###
+.env
+.*.env
+!.env.example
+/tmp/
+/build/
+/coverage/
+/logs/
+/uploads/
+.idea/

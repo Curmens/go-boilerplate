@@ -12,8 +12,10 @@ import (
 
 // Config holds all configuration for the application
 type Config struct {
+	App      AppConfig      `json:"app"`
 	Server   ServerConfig   `json:"server"`
 	Database DatabaseConfig `json:"database"`
+	Cache    CacheConfig    `json:"cache"`
 	Redis    RedisConfig    `json:"redis"`
 	JWT      JWTConfig      `json:"jwt"`
 	Email    EmailConfig    `json:"email"`
@@ -23,14 +25,26 @@ type Config struct {
 	Cors     CorsConfig     `json:"cors"`
 }
 
+type AppConfig struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+}
+
 type ServerConfig struct {
-	Host         string        `json:"host"`
-	Port         string        `json:"port"`
-	Mode         string        `json:"mode"` // debug, release, test
-	ReadTimeout  time.Duration `json:"read_timeout"`
-	WriteTimeout time.Duration `json:"write_timeout"`
-	IdleTimeout  time.Duration `json:"idle_timeout"`
-	TLS          TLSConfig     `json:"tls"`
+	Host            string        `json:"host"`
+	Port            string        `json:"port"`
+	Mode            string        `json:"mode"` // debug, release, test
+	ReadTimeout     time.Duration `json:"read_timeout"`
+	WriteTimeout    time.Duration `json:"write_timeout"`
+	IdleTimeout     time.Duration `json:"idle_timeout"`
+	ShutdownTimeout time.Duration `json:"shutdown_timeout"`
+	MaxBodyBytes    int64         `json:"max_body_bytes"`
+	TLS             TLSConfig     `json:"tls"`
+	// TrustedProxies lists load balancer / reverse-proxy IPs or CIDRs allowed to
+	// set X-Forwarded-For. Empty means trust no proxies (safest default).
+	TrustedProxies []string `json:"trusted_proxies"`
+	// InternalAPIKey protects service-to-service endpoints via the X-API-Key header.
+	InternalAPIKey string `json:"-"`
 }
 
 type TLSConfig struct {
@@ -40,39 +54,47 @@ type TLSConfig struct {
 }
 
 type DatabaseConfig struct {
+	// Enabled lets the app boot without a database (useful for a fresh clone).
+	Enabled         bool          `json:"enabled"`
+	AutoMigrate     bool          `json:"auto_migrate"`
 	Driver          string        `json:"driver"`
 	Host            string        `json:"host"`
 	Port            string        `json:"port"`
 	Name            string        `json:"name"`
 	User            string        `json:"user"`
-	Password        string        `json:"password"`
+	Password        string        `json:"-"`
 	SSLMode         string        `json:"ssl_mode"`
 	MaxOpenConns    int           `json:"max_open_conns"`
 	MaxIdleConns    int           `json:"max_idle_conns"`
 	ConnMaxLifetime time.Duration `json:"conn_max_lifetime"`
 	ConnMaxIdleTime time.Duration `json:"conn_max_idle_time"`
+	SlowThreshold   time.Duration `json:"slow_threshold"`
+}
+
+type CacheConfig struct {
+	UseRedis   bool          `json:"use_redis"`
+	DefaultTTL time.Duration `json:"default_ttl"`
 }
 
 type RedisConfig struct {
 	Host     string `json:"host"`
 	Port     string `json:"port"`
-	Password string `json:"password"`
+	Password string `json:"-"`
 	DB       int    `json:"db"`
 }
 
 type JWTConfig struct {
-	Secret          string        `json:"secret"`
+	Secret          string        `json:"-"`
 	AccessTokenTTL  time.Duration `json:"access_token_ttl"`
 	RefreshTokenTTL time.Duration `json:"refresh_token_ttl"`
 	Issuer          string        `json:"issuer"`
-	CleanupInterval time.Duration `json:"cleanup_interval"`
 }
 
 type EmailConfig struct {
 	SMTPHost     string `json:"smtp_host"`
 	SMTPPort     int    `json:"smtp_port"`
 	SMTPUsername string `json:"smtp_username"`
-	SMTPPassword string `json:"smtp_password"`
+	SMTPPassword string `json:"-"`
 	FromEmail    string `json:"from_email"`
 	FromName     string `json:"from_name"`
 }
@@ -80,9 +102,8 @@ type EmailConfig struct {
 type LoggerConfig struct {
 	Level         string `json:"level"`
 	Format        string `json:"format"` // json, text
-	Output        string `json:"output"` // stdout, file, both
 	FilePath      string `json:"file_path"`
-	MaxSize       int    `json:"max_size"`
+	MaxSize       int    `json:"max_size"` // MB
 	MaxFiles      int    `json:"max_files"`
 	EnableConsole bool   `json:"enable_console"`
 }
@@ -97,8 +118,8 @@ type StorageConfig struct {
 type S3Config struct {
 	Region          string `json:"region"`
 	Bucket          string `json:"bucket"`
-	AccessKeyID     string `json:"access_key_id"`
-	SecretAccessKey string `json:"secret_access_key"`
+	AccessKeyID     string `json:"-"`
+	SecretAccessKey string `json:"-"`
 	Endpoint        string `json:"endpoint"` // For S3-compatible services
 }
 
@@ -108,11 +129,11 @@ type GCSConfig struct {
 	CredentialsPath string `json:"credentials_path"`
 }
 
+// RateConfig configures the global per-IP fixed-window rate limiter.
 type RateConfig struct {
 	Enabled bool          `json:"enabled"`
-	RPS     int           `json:"rps"` // Requests per second
-	Burst   int           `json:"burst"`
-	TTL     time.Duration `json:"ttl"`
+	Limit   int           `json:"limit"`  // Requests allowed per window
+	Window  time.Duration `json:"window"` // Window length
 }
 
 type CorsConfig struct {
@@ -124,33 +145,50 @@ type CorsConfig struct {
 	MaxAge           int      `json:"max_age"`
 }
 
-// Load loads configuration from environment variables and .env file
+// Load loads configuration from environment variables and an env file.
+// ENV_FILE selects which file to read (e.g. ENV_FILE=.prod.env); it defaults
+// to .env. Variables already present in the environment always win, so the
+// file never overrides an explicit export.
 func Load() (*Config, error) {
-	// Load .env file if it exists
-	if err := godotenv.Load(); err != nil {
-		// .env file is optional
-		fmt.Printf("Warning: .env file not found: %v\n", err)
+	envFile := os.Getenv("ENV_FILE")
+	if envFile == "" {
+		envFile = ".env"
+	}
+
+	if err := godotenv.Load(envFile); err != nil {
+		// The env file is optional.
+		fmt.Printf("Warning: %s not found: %v\n", envFile, err)
 	}
 
 	config := &Config{
+		App: AppConfig{
+			Name:    getEnv("APP_NAME", "go-boilerplate"),
+			Version: getEnv("APP_VERSION", "0.1.0"),
+		},
 		Server: ServerConfig{
-			Host:         getEnv("SERVER_HOST", "0.0.0.0"),
-			Port:         getEnv("SERVER_PORT", "8080"),
-			Mode:         getEnv("GIN_MODE", "debug"),
-			ReadTimeout:  getDurationEnv("SERVER_READ_TIMEOUT", 30*time.Second),
-			WriteTimeout: getDurationEnv("SERVER_WRITE_TIMEOUT", 30*time.Second),
-			IdleTimeout:  getDurationEnv("SERVER_IDLE_TIMEOUT", 120*time.Second),
+			Host:            getEnv("SERVER_HOST", "0.0.0.0"),
+			Port:            getEnv("SERVER_PORT", getEnv("PORT", "8080")),
+			Mode:            getEnv("GIN_MODE", "release"),
+			ReadTimeout:     getDurationEnv("SERVER_READ_TIMEOUT", 30*time.Second),
+			WriteTimeout:    getDurationEnv("SERVER_WRITE_TIMEOUT", 30*time.Second),
+			IdleTimeout:     getDurationEnv("SERVER_IDLE_TIMEOUT", 120*time.Second),
+			ShutdownTimeout: getDurationEnv("SERVER_SHUTDOWN_TIMEOUT", 15*time.Second),
+			MaxBodyBytes:    int64(getIntEnv("SERVER_MAX_BODY_BYTES", 4*1024*1024)),
 			TLS: TLSConfig{
 				Enabled:  getBoolEnv("TLS_ENABLED", false),
 				CertFile: getEnv("TLS_CERT_FILE", ""),
 				KeyFile:  getEnv("TLS_KEY_FILE", ""),
 			},
+			TrustedProxies: getSliceEnv("TRUSTED_PROXIES", []string{}),
+			InternalAPIKey: getEnv("INTERNAL_API_KEY", ""),
 		},
 		Database: DatabaseConfig{
+			Enabled:         getBoolEnv("DB_ENABLED", true),
+			AutoMigrate:     getBoolEnv("DB_AUTO_MIGRATE", false),
 			Driver:          getEnv("DB_DRIVER", "postgres"),
 			Host:            getEnv("DB_HOST", "localhost"),
 			Port:            getEnv("DB_PORT", "5432"),
-			Name:            getEnv("DB_NAME", "prohealium"),
+			Name:            getEnv("DB_NAME", "app"),
 			User:            getEnv("DB_USER", "postgres"),
 			Password:        getEnv("DB_PASSWORD", ""),
 			SSLMode:         getEnv("DB_SSL_MODE", "disable"),
@@ -158,6 +196,11 @@ func Load() (*Config, error) {
 			MaxIdleConns:    getIntEnv("DB_MAX_IDLE_CONNS", 25),
 			ConnMaxLifetime: getDurationEnv("DB_CONN_MAX_LIFETIME", 5*time.Minute),
 			ConnMaxIdleTime: getDurationEnv("DB_CONN_MAX_IDLE_TIME", 5*time.Minute),
+			SlowThreshold:   getDurationEnv("DB_SLOW_THRESHOLD", 200*time.Millisecond),
+		},
+		Cache: CacheConfig{
+			UseRedis:   getBoolEnv("USE_REDIS", false),
+			DefaultTTL: getDurationEnv("CACHE_DEFAULT_TTL", 60*time.Second),
 		},
 		Redis: RedisConfig{
 			Host:     getEnv("REDIS_HOST", "localhost"),
@@ -166,11 +209,10 @@ func Load() (*Config, error) {
 			DB:       getIntEnv("REDIS_DB", 0),
 		},
 		JWT: JWTConfig{
-			Secret:          getEnv("JWT_SECRET", "your-secret-key"),
+			Secret:          getEnv("JWT_SECRET", ""),
 			AccessTokenTTL:  getDurationEnv("JWT_ACCESS_TOKEN_TTL", 15*time.Minute),
 			RefreshTokenTTL: getDurationEnv("JWT_REFRESH_TOKEN_TTL", 7*24*time.Hour),
-			Issuer:          getEnv("JWT_ISSUER", "prohealium"),
-			CleanupInterval: getDurationEnv("JWT_CLEANUP_INTERVAL", 1*time.Hour),
+			Issuer:          getEnv("JWT_ISSUER", "go-boilerplate"),
 		},
 		Email: EmailConfig{
 			SMTPHost:     getEnv("SMTP_HOST", ""),
@@ -178,12 +220,11 @@ func Load() (*Config, error) {
 			SMTPUsername: getEnv("SMTP_USERNAME", ""),
 			SMTPPassword: getEnv("SMTP_PASSWORD", ""),
 			FromEmail:    getEnv("FROM_EMAIL", ""),
-			FromName:     getEnv("FROM_NAME", "Prohealium"),
+			FromName:     getEnv("FROM_NAME", "App"),
 		},
 		Logger: LoggerConfig{
-			Level:         getEnv("LOG_LEVEL", "debug"),
+			Level:         getEnv("LOG_LEVEL", "info"),
 			Format:        getEnv("LOG_FORMAT", "json"),
-			Output:        getEnv("LOG_OUTPUT", "both"),
 			FilePath:      getEnv("LOG_FILE_PATH", "./logs"),
 			MaxSize:       getIntEnv("LOG_MAX_SIZE", 100),
 			MaxFiles:      getIntEnv("LOG_MAX_FILES", 7),
@@ -207,14 +248,13 @@ func Load() (*Config, error) {
 		},
 		Rate: RateConfig{
 			Enabled: getBoolEnv("RATE_LIMIT_ENABLED", true),
-			RPS:     getIntEnv("RATE_LIMIT_RPS", 100),
-			Burst:   getIntEnv("RATE_LIMIT_BURST", 200),
-			TTL:     getDurationEnv("RATE_LIMIT_TTL", 1*time.Hour),
+			Limit:   getIntEnv("RATE_LIMIT_LIMIT", 300),
+			Window:  getDurationEnv("RATE_LIMIT_WINDOW", time.Minute),
 		},
 		Cors: CorsConfig{
-			AllowedOrigins:   getSliceEnv("CORS_ALLOWED_ORIGINS", []string{"*"}),
-			AllowedMethods:   getSliceEnv("CORS_ALLOWED_METHODS", []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}),
-			AllowedHeaders:   getSliceEnv("CORS_ALLOWED_HEADERS", []string{"Origin", "Content-Type", "Authorization", "X-Request-ID"}),
+			AllowedOrigins:   getSliceEnv("CORS_ALLOWED_ORIGINS", []string{"http://localhost:3000"}),
+			AllowedMethods:   getSliceEnv("CORS_ALLOWED_METHODS", []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}),
+			AllowedHeaders:   getSliceEnv("CORS_ALLOWED_HEADERS", []string{"Origin", "Content-Type", "Authorization", "X-Request-ID", "X-API-Key"}),
 			ExposedHeaders:   getSliceEnv("CORS_EXPOSED_HEADERS", []string{"X-Request-ID"}),
 			AllowCredentials: getBoolEnv("CORS_ALLOW_CREDENTIALS", true),
 			MaxAge:           getIntEnv("CORS_MAX_AGE", 86400),
@@ -224,31 +264,42 @@ func Load() (*Config, error) {
 	return config, config.Validate()
 }
 
-// Validate validates the configuration
+// IsDebug reports whether the server runs in gin debug mode.
+func (c *Config) IsDebug() bool {
+	return c.Server.Mode == "debug"
+}
+
+// Validate validates the configuration. Debug mode relaxes the secret checks
+// so a fresh clone can boot without any configuration.
 func (c *Config) Validate() error {
-	if c.JWT.Secret == "your-secret-key" && c.Server.Mode != "debug" {
-		return fmt.Errorf("JWT secret must be set in production")
+	switch c.Server.Mode {
+	case "debug", "release", "test":
+	default:
+		return fmt.Errorf("GIN_MODE must be one of debug, release, test (got %q)", c.Server.Mode)
 	}
 
-	if c.Database.Password == "" && c.Server.Mode != "debug" {
-		return fmt.Errorf("database password must be set in production")
+	if c.IsDebug() {
+		return nil
+	}
+
+	if len(c.JWT.Secret) < 32 {
+		return fmt.Errorf("JWT_SECRET must be set and at least 32 characters outside debug mode")
+	}
+
+	if c.Database.Enabled && c.Database.Password == "" {
+		return fmt.Errorf("DB_PASSWORD must be set outside debug mode")
+	}
+
+	if c.Server.TLS.Enabled && (c.Server.TLS.CertFile == "" || c.Server.TLS.KeyFile == "") {
+		return fmt.Errorf("TLS_CERT_FILE and TLS_KEY_FILE must be set when TLS_ENABLED=true")
 	}
 
 	return nil
 }
 
-// GetDSN returns the database connection string
-func (c *DatabaseConfig) GetDSN() string {
-	switch c.Driver {
-	case "postgres":
-		return fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-			c.Host, c.Port, c.User, c.Password, c.Name, c.SSLMode)
-	case "mysql":
-		return fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
-			c.User, c.Password, c.Host, c.Port, c.Name)
-	default:
-		return ""
-	}
+// Address returns the host:port the HTTP server listens on.
+func (s *ServerConfig) Address() string {
+	return s.Host + ":" + s.Port
 }
 
 // Helper functions
@@ -287,8 +338,17 @@ func getDurationEnv(key string, defaultValue time.Duration) time.Duration {
 }
 
 func getSliceEnv(key string, defaultValue []string) []string {
-	if value := os.Getenv(key); value != "" {
-		return strings.Split(value, ",")
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
 	}
-	return defaultValue
+
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }
